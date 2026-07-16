@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x86" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="CountdownTimer/CountdownTimer.vcxproj" Id="0e09d7c0-b5de-4de9-a73f-b69450ecafd7" />
+</Solution>
