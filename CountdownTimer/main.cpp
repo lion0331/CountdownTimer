@@ -197,7 +197,16 @@ static void HandleMenuCmd(WORD id)
 	case 1003:PauseResume(); break;
 	case 1004:DoReset(); break;
 	case 1005:BeginEditPrompt(); break;
-	case 2000:g.settings.alwaysOnTop = !g.settings.alwaysOnTop; g.settings.Save(); SetWindowPos(g.hwnd, g.settings.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW); break;
+	case 2000:
+		g.settings.alwaysOnTop = !g.settings.alwaysOnTop; g.settings.Save();
+		if (g.settings.alwaysOnTop) {
+			SetWindowLong(g.hwnd, GWL_EXSTYLE, GetWindowLong(g.hwnd, GWL_EXSTYLE) | WS_EX_TOPMOST);
+			SetWindowPos(g.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		} else {
+			SetWindowLong(g.hwnd, GWL_EXSTYLE, GetWindowLong(g.hwnd, GWL_EXSTYLE) & ~WS_EX_TOPMOST);
+			SetWindowPos(g.hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		}
+		break;
 	case 2001:g.settings.minimizeToTray = !g.settings.minimizeToTray; g.settings.Save(); break;
 	case 2003:g.settings.autoStart = !g.settings.autoStart; g.settings.Save(); SetAutoStart(g.settings.autoStart); break;
 	case 2004:
@@ -303,7 +312,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 	switch (msg)
 	{
 	case WM_CREATE:
-		g.hwnd = hwnd; g.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_MAIN_ICON)); g.settings.Load(); SetAutoStart(g.settings.autoStart); g.inputMode = g.settings.inputMode; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; Theme_InitFont(g.settings.fontFace, g.settings.fontSize); SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		g.hwnd = hwnd; g.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_MAIN_ICON)); g.settings.Load(); SetAutoStart(g.settings.autoStart); g.inputMode = g.settings.inputMode; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; Theme_InitFont(g.settings.fontFace, g.settings.fontSize);
+		if (g.settings.alwaysOnTop) SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 		if (g.settings.centerOnScreen) { RECT wr; GetWindowRect(hwnd, &wr); int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN); int cx = (sw - (wr.right - wr.left)) / 2, cy = (sh - (wr.bottom - wr.top)) / 2; SetWindowPos(hwnd, nullptr, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER); }
 		g.tray.Add(hwnd, g.hIcon); SetTimer(hwnd, IDT_COUNTDOWN, TIMER_INTERVAL, nullptr); PostMessageW(hwnd, WM_APP, 0, 0); return 0;
 	case WM_APP:AutoRestoreCountdown(); return 0;
@@ -418,7 +428,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ i
 	INITCOMMONCONTROLSEX icc = { sizeof(icc),ICC_STANDARD_CLASSES }; InitCommonControlsEx(&icc); ULONG_PTR gdiTok = 0; GdiplusStartupInput gdiIn; GdiplusStartup(&gdiTok, &gdiIn, nullptr);
 	WNDCLASSEXW wc = {}; wc.cbSize = sizeof(wc); wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS; wc.lpfnWndProc = WndProc; wc.hInstance = hInst; wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); wc.lpszClassName = L"CountdownOverlay"; wc.hIcon = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_MAIN_ICON)); wc.hIconSm = wc.hIcon; RegisterClassExW(&wc);
 	g.settings.Load(); g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds;
-	HWND hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"CountdownOverlay", L"Countdown", WS_POPUP, g.settings.winX, g.settings.winY, g.settings.winW, g.settings.winH, nullptr, nullptr, hInst, nullptr);
+	DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+	if (g.settings.alwaysOnTop) exStyle |= WS_EX_TOPMOST;
+	HWND hwnd = CreateWindowExW(exStyle, L"CountdownOverlay", L"Countdown", WS_POPUP, g.settings.winX, g.settings.winY, g.settings.winW, g.settings.winH, nullptr, nullptr, hInst, nullptr);
 	if (!hwnd)
 	{
 		GdiplusShutdown(gdiTok); return 1;
