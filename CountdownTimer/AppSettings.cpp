@@ -19,6 +19,7 @@ void AppSettings::Load()
 	sz = sizeof(DWORD);            RegQueryValueExW(hKey, L"UseCustomSound", nullptr, nullptr, (LPBYTE)&useCustomSound, &sz);
 	sz = sizeof(DWORD);            RegQueryValueExW(hKey, L"AlwaysOnTop", nullptr, nullptr, (LPBYTE)&alwaysOnTop, &sz);
 	sz = sizeof(DWORD);            RegQueryValueExW(hKey, L"AutoStart", nullptr, nullptr, (LPBYTE)&autoStart, &sz);
+	sz = sizeof(DWORD);            RegQueryValueExW(hKey, L"CenterOnScreen", nullptr, nullptr, (LPBYTE)&centerOnScreen, &sz);
 	sz = sizeof(DWORD);            RegQueryValueExW(hKey, L"MinimizeToTray", nullptr, nullptr, (LPBYTE)&minimizeToTray, &sz);
 	sz = sizeof(winX);             RegQueryValueExW(hKey, L"WinX", nullptr, nullptr, (LPBYTE)&winX, &sz);
 	sz = sizeof(winY);             RegQueryValueExW(hKey, L"WinY", nullptr, nullptr, (LPBYTE)&winY, &sz);
@@ -55,6 +56,7 @@ void AppSettings::Save() const
 	DWORD dwUseCustomSound = useCustomSound ? 1 : 0;
 	DWORD dwAlwaysOnTop = alwaysOnTop ? 1 : 0;
 	DWORD dwAutoStart = autoStart ? 1 : 0;
+	DWORD dwCenterOnScreen = centerOnScreen ? 1 : 0;
 	DWORD dwMinimizeToTray = minimizeToTray ? 1 : 0;
 	DWORD dwWasRunning = wasRunning ? 1 : 0;
 
@@ -69,6 +71,7 @@ void AppSettings::Save() const
 	RegSetValueExW(hKey, L"UseCustomSound", 0, REG_DWORD, (LPBYTE)&dwUseCustomSound, sizeof(DWORD));
 	RegSetValueExW(hKey, L"AlwaysOnTop", 0, REG_DWORD, (LPBYTE)&dwAlwaysOnTop, sizeof(DWORD));
 	RegSetValueExW(hKey, L"AutoStart", 0, REG_DWORD, (LPBYTE)&dwAutoStart, sizeof(DWORD));
+	RegSetValueExW(hKey, L"CenterOnScreen", 0, REG_DWORD, (LPBYTE)&dwCenterOnScreen, sizeof(DWORD));
 	RegSetValueExW(hKey, L"MinimizeToTray", 0, REG_DWORD, (LPBYTE)&dwMinimizeToTray, sizeof(DWORD));
 	RegSetValueExW(hKey, L"WinX", 0, REG_DWORD, (LPBYTE)&winX, sizeof(int));
 	RegSetValueExW(hKey, L"WinY", 0, REG_DWORD, (LPBYTE)&winY, sizeof(int));

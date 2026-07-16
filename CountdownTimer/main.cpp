@@ -183,6 +183,7 @@ static HMENU BuildContextMenu()
 	AppendMenuW(m, MF_STRING | (g.settings.alwaysOnTop ? MF_CHECKED : 0), 2000, L"\u7f6e\u9876");
 	AppendMenuW(m, MF_STRING | (g.settings.minimizeToTray ? MF_CHECKED : 0), 2001, L"\u5173\u95ed\u5230\u6258\u76d8");
 	AppendMenuW(m, MF_STRING | (g.settings.autoStart ? MF_CHECKED : 0), 2003, L"\u5f00\u673a\u542f\u52a8");
+	AppendMenuW(m, MF_STRING | (g.settings.centerOnScreen ? MF_CHECKED : 0), 2004, L"\u5c45\u4e2d");
 	AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(m, MF_STRING, 2002, L"\u9000\u51fa");
 	return m;
@@ -199,6 +200,15 @@ static void HandleMenuCmd(WORD id)
 	case 2000:g.settings.alwaysOnTop = !g.settings.alwaysOnTop; g.settings.Save(); SetWindowPos(g.hwnd, g.settings.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW); break;
 	case 2001:g.settings.minimizeToTray = !g.settings.minimizeToTray; g.settings.Save(); break;
 	case 2003:g.settings.autoStart = !g.settings.autoStart; g.settings.Save(); SetAutoStart(g.settings.autoStart); break;
+	case 2004:
+		g.settings.centerOnScreen = !g.settings.centerOnScreen; g.settings.Save();
+		if (g.settings.centerOnScreen) {
+			RECT wr; GetWindowRect(g.hwnd, &wr);
+			int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+			int cx = (sw - (wr.right - wr.left)) / 2, cy = (sh - (wr.bottom - wr.top)) / 2;
+			SetWindowPos(g.hwnd, nullptr, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+		}
+		break;
 	case 2002:DestroyWindow(g.hwnd); break;
 	case 3001: {
 		static COLORREF c[16] = {}; CHOOSECOLORW cc = { sizeof(cc) }; cc.hwndOwner = g.hwnd; cc.rgbResult = g.settings.textColor; cc.lpCustColors = c; cc.Flags = CC_RGBINIT | CC_FULLOPEN; if (ChooseColorW(&cc))
@@ -293,7 +303,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 	switch (msg)
 	{
 	case WM_CREATE:
-		g.hwnd = hwnd; g.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_MAIN_ICON)); g.settings.Load(); SetAutoStart(g.settings.autoStart); g.inputMode = g.settings.inputMode; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; Theme_InitFont(g.settings.fontFace, g.settings.fontSize); SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW); g.tray.Add(hwnd, g.hIcon); SetTimer(hwnd, IDT_COUNTDOWN, TIMER_INTERVAL, nullptr); PostMessageW(hwnd, WM_APP, 0, 0); return 0;
+		g.hwnd = hwnd; g.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_MAIN_ICON)); g.settings.Load(); SetAutoStart(g.settings.autoStart); g.inputMode = g.settings.inputMode; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; Theme_InitFont(g.settings.fontFace, g.settings.fontSize); SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		if (g.settings.centerOnScreen) { RECT wr; GetWindowRect(hwnd, &wr); int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN); int cx = (sw - (wr.right - wr.left)) / 2, cy = (sh - (wr.bottom - wr.top)) / 2; SetWindowPos(hwnd, nullptr, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER); }
+		g.tray.Add(hwnd, g.hIcon); SetTimer(hwnd, IDT_COUNTDOWN, TIMER_INTERVAL, nullptr); PostMessageW(hwnd, WM_APP, 0, 0); return 0;
 	case WM_APP:AutoRestoreCountdown(); return 0;
 	case WM_SIZE:UpdateLayered(hwnd); return 0;
 	case WM_PAINT: {

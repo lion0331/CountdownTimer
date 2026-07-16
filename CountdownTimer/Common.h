@@ -59,8 +59,9 @@ struct AppSettings
 	wchar_t soundPath[MAX_PATH] = L"";
 	bool    useCustomSound = false;
 	bool    alwaysOnTop = false;
-	bool    autoStart = false;
-	bool    minimizeToTray = true;
+	bool    autoStart          = false;
+	bool    centerOnScreen     = false;
+	bool    minimizeToTray     = true;
 	int     winX = CW_USEDEFAULT, winY = CW_USEDEFAULT;
 	int     winW = WIN_W, winH = WIN_H;
 	wchar_t promptText[128];
