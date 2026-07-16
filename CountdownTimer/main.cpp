@@ -184,6 +184,7 @@ static HMENU BuildContextMenu()
 	AppendMenuW(m, MF_STRING | (g.settings.minimizeToTray ? MF_CHECKED : 0), 2001, L"\u5173\u95ed\u5230\u6258\u76d8");
 	AppendMenuW(m, MF_STRING | (g.settings.autoStart ? MF_CHECKED : 0), 2003, L"\u5f00\u673a\u542f\u52a8");
 	AppendMenuW(m, MF_STRING | (g.settings.centerOnScreen ? MF_CHECKED : 0), 2004, L"\u5c45\u4e2d");
+	AppendMenuW(m, MF_STRING | (g.settings.lockPosition   ? MF_CHECKED : 0), 2005, L"\u9501\u5b9a\u4f4d\u7f6e");
 	AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(m, MF_STRING, 2002, L"\u9000\u51fa");
 	return m;
@@ -218,6 +219,7 @@ static void HandleMenuCmd(WORD id)
 			SetWindowPos(g.hwnd, nullptr, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 		}
 		break;
+	case 2005: g.settings.lockPosition = !g.settings.lockPosition; g.settings.Save(); break;
 	case 2002:DestroyWindow(g.hwnd); break;
 	case 3001: {
 		static COLORREF c[16] = {}; CHOOSECOLORW cc = { sizeof(cc) }; cc.hwndOwner = g.hwnd; cc.rgbResult = g.settings.textColor; cc.lpCustColors = c; cc.Flags = CC_RGBINIT | CC_FULLOPEN; if (ChooseColorW(&cc))
@@ -372,7 +374,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			}break;
 			}
 		}return 0;
-	case WM_LBUTTONDOWN:g.dragging = true; g.dragX = (int)(short)LOWORD(lp); g.dragY = (int)(short)HIWORD(lp); SetCapture(hwnd); return 0;
+	case WM_LBUTTONDOWN: if (!g.settings.lockPosition) { g.dragging = true; g.dragX = (int)(short)LOWORD(lp); g.dragY = (int)(short)HIWORD(lp); SetCapture(hwnd); } return 0;
 	case WM_MOUSEMOVE:if (g.dragging)
 	{
 		POINT pt; GetCursorPos(&pt); SetWindowPos(hwnd, nullptr, pt.x - g.dragX, pt.y - g.dragY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);

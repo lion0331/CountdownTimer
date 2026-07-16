@@ -61,6 +61,7 @@ struct AppSettings
 	bool    alwaysOnTop = false;
 	bool    autoStart          = false;
 	bool    centerOnScreen     = false;
+	bool    lockPosition       = false;
 	bool    minimizeToTray     = true;
 	int     winX = CW_USEDEFAULT, winY = CW_USEDEFAULT;
 	int     winW = WIN_W, winH = WIN_H;
