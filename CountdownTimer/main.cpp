@@ -79,7 +79,13 @@ static void StartCountdown()
 	g.settings.inputMode = g.inputMode;
 	if (g.inputMode == 0)
 	{
-		if (g.editH == 0 && g.editM == 0 && g.editS == 0)return; g.engine.SetDuration(g.editH, g.editM, g.editS);
+		if (g.editH == 0 && g.editM == 0 && g.editS == 0)
+		{
+			g.editMode = 1;
+			g.tray.ShowBalloon(L"\u5012\u8ba1\u65f6", L"\u65f6\u957f\u4e0d\u80fd\u4e3a 0\uff0c\u8bf7\u91cd\u65b0\u8bbe\u7f6e");
+			UpdateLayered(g.hwnd); return;
+		}
+		g.engine.SetDuration(g.editH, g.editM, g.editS);
 	}
 	else
 	{
@@ -89,6 +95,8 @@ static void StartCountdown()
 		FILETIME ftT = {}, ftN = {}; SystemTimeToFileTime(&g.editDateST, &ftT); GetSystemTimeAsFileTime(&ftN);
 		if (*(ULONGLONG*)&ftT <= *(ULONGLONG*)&ftN)
 		{
+			g.editMode = 2;
+			g.tray.ShowBalloon(L"\u5012\u8ba1\u65f6", L"\u76ee\u6807\u65f6\u95f4\u5df2\u8fc7\u53bb\uff0c\u8bf7\u91cd\u65b0\u8bbe\u7f6e\u65e5\u671f");
 			UpdateLayered(g.hwnd); return;
 		}
 		g.engine.SetTargetDate(g.editDateST);
@@ -118,25 +126,23 @@ static void OnFinished()
 
 static void BeginEditDuration()
 {
-	if (g.engine.IsRunning())return; g.editMode = 1; g.editField = 0; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; if (g.editH == 0 && g.editM == 0 && g.editS == 0)g.editM = 5; UpdateLayered(g.hwnd);
+	g.editMode = 1; g.editField = 0; g.editH = g.settings.lastHours; g.editM = g.settings.lastMinutes; g.editS = g.settings.lastSeconds; if (g.editH == 0 && g.editM == 0 && g.editS == 0)g.editM = 5; UpdateLayered(g.hwnd);
 }
 static void BeginEditDate()
 {
-	if (g.engine.IsRunning())return; g.editMode = 2; g.editField = 0; if (g.settings.lastDateYear > 0)
+	g.editMode = 2; g.editField = 0; if (g.settings.lastDateYear > 0)
 	{
 		g.editDateST.wYear = g.settings.lastDateYear; g.editDateST.wMonth = g.settings.lastDateMonth; g.editDateST.wDay = g.settings.lastDateDay; g.editDateST.wHour = g.settings.lastTimeHour; g.editDateST.wMinute = g.settings.lastTimeMin; g.editDateST.wSecond = g.settings.lastTimeSec;
 	}
 	else
 	{
-		GetLocalTime(&g.editDateST); g.editDateST.wMinute += 5; if (g.editDateST.wMinute >= 60)
-		{
-			g.editDateST.wMinute -= 60; g.editDateST.wHour++;
-		}g.editDateST.wSecond = 0;
+		GetLocalTime(&g.editDateST); g.editDateST.wSecond = 0;
+		FILETIME ft0; SystemTimeToFileTime(&g.editDateST, &ft0); *(ULONGLONG*)&ft0 += 3000000000ULL; FileTimeToSystemTime(&ft0, &g.editDateST);
 	}UpdateLayered(g.hwnd);
 }
 static void BeginEditPrompt()
 {
-	if (g.engine.IsRunning())return; g.editMode = 3; wcscpy_s(g.editPrompt, g.settings.promptText); UpdateLayered(g.hwnd);
+	g.editMode = 3; wcscpy_s(g.editPrompt, g.settings.promptText); UpdateLayered(g.hwnd);
 }
 static void CommitEdit()
 {
@@ -161,15 +167,51 @@ static void AdjSec(int d)
 {
 	int t = g.editH * 3600 + g.editM * 60 + g.editS + d; if (t < 0)t = 0; g.editH = t / 3600; g.editM = (t / 60) % 60; g.editS = t % 60; UpdateLayered(g.hwnd);
 }
-static void AdjDate(int dH)
+static int DaysInMonth(int y, int m)
 {
-	FILETIME ft; SystemTimeToFileTime(&g.editDateST, &ft); *(ULONGLONG*)&ft += (LONGLONG)dH * 36000000000ULL; FileTimeToSystemTime(&ft, &g.editDateST); UpdateLayered(g.hwnd);
+	if (m < 1 || m > 12) return 31;
+	static const int dim[12] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+	if (m == 2)
+	{
+		bool leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+		return leap ? 29 : 28;
+	}
+	return dim[m - 1];
+}
+
+static void NormalizeDateST()
+{
+	if (g.editDateST.wMonth < 1) g.editDateST.wMonth = 1;
+	if (g.editDateST.wMonth > 12) g.editDateST.wMonth = 12;
+	int dim = DaysInMonth(g.editDateST.wYear, g.editDateST.wMonth);
+	if (g.editDateST.wDay < 1) g.editDateST.wDay = 1;
+	if (g.editDateST.wDay > dim) g.editDateST.wDay = (WORD)dim;
+	if (g.editDateST.wHour > 23) g.editDateST.wHour = 23;
+	if (g.editDateST.wMinute > 59) g.editDateST.wMinute = 59;
+	if (g.editDateST.wSecond > 59) g.editDateST.wSecond = 59;
+}
+
+// 日期模式逐字段调整: 0年 1月 2日 3时 4分 5秒; Shift 快调
+static void AdjDateField(int d)
+{
+	bool fast = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+	switch (g.editField)
+	{
+	case 0: { int v = g.editDateST.wYear + (fast ? d * 10 : d); g.editDateST.wYear = (WORD)(v < 1 ? 1 : (v > 9999 ? 9999 : v)); } break;
+	case 1: { int v = g.editDateST.wMonth + d; g.editDateST.wMonth = (WORD)(v < 1 ? 1 : (v > 12 ? 12 : v)); } break;
+	case 2: { int dim = DaysInMonth(g.editDateST.wYear, g.editDateST.wMonth); int v = g.editDateST.wDay + (fast ? d * 10 : d); g.editDateST.wDay = (WORD)(v < 1 ? 1 : (v > dim ? dim : v)); } break;
+	case 3: { int v = g.editDateST.wHour + (fast ? d * 5 : d); g.editDateST.wHour = (WORD)(v < 0 ? 0 : (v > 23 ? 23 : v)); } break;
+	case 4: { int v = g.editDateST.wMinute + (fast ? d * 5 : d); g.editDateST.wMinute = (WORD)(v < 0 ? 0 : (v > 59 ? 59 : v)); } break;
+	case 5: { int v = g.editDateST.wSecond + (fast ? d * 5 : d); g.editDateST.wSecond = (WORD)(v < 0 ? 0 : (v > 59 ? 59 : v)); } break;
+	}
+	NormalizeDateST();
 }
 
 static HMENU BuildContextMenu()
 {
 	HMENU m = CreatePopupMenu();
-	AppendMenuW(m, MF_STRING, 1001, g.inputMode == 0 ? L"\u8bbe\u7f6e\u65f6\u957f..." : L"\u8bbe\u7f6e\u65e5\u671f\u65f6\u95f4...");
+	AppendMenuW(m, MF_STRING | (g.inputMode == 0 ? MF_CHECKED : 0), 1006, L"\u8bbe\u7f6e\u65f6\u957f...");
+	AppendMenuW(m, MF_STRING | (g.inputMode == 1 ? MF_CHECKED : 0), 1007, L"\u8bbe\u7f6e\u65e5\u671f...");
 	AppendMenuW(m, MF_STRING, 1005, L"\u7f16\u8f91\u63d0\u793a\u6587\u672c...");
 	AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
 	AppendMenuW(m, MF_STRING, 1003, g.engine.IsRunning() ? L"\u6682\u505c" : L"\u5f00\u59cb");
@@ -195,6 +237,8 @@ static void HandleMenuCmd(WORD id)
 	switch (id)
 	{
 	case 1001:if (g.inputMode == 0)BeginEditDuration(); else BeginEditDate(); break;
+	case 1006:g.inputMode = 0; BeginEditDuration(); break;
+	case 1007:g.inputMode = 1; BeginEditDate(); break;
 	case 1003:PauseResume(); break;
 	case 1004:DoReset(); break;
 	case 1005:BeginEditPrompt(); break;
@@ -265,9 +309,13 @@ static void UpdateLayered(HWND hwnd)
 	if (g.editMode == 0)
 	{
 		int days = 0, hrs = 0, mn = 0, sc = 0; g.engine.GetDisplay(days, hrs, mn, sc); ULONGLONG rem = g.engine.RemainingMs(); bool fin = g.engine.IsFinished(); bool has = (g.engine.IsRunning() || rem > 0 || fin);
-		{
-			const wchar_t* ff = (g.settings.promptFontFace[0] != 0) ? g.settings.promptFontFace : g.settings.fontFace; int fs = (g.settings.promptFontSize > 0) ? g.settings.promptFontSize : (int)(g.settings.fontSize * 0.28f); Font fP(ff, (REAL)fs, FontStyleRegular, UnitPoint); COLORREF rc2 = (g.settings.promptTextColor == 0xFFFFFFFF) ? g.settings.textColor : g.settings.promptTextColor; BYTE a = (g.settings.promptTextColor == 0xFFFFFFFF) ? 140 : 255; SolidBrush br(Color(a, GetRValue(rc2), GetGValue(rc2), GetBValue(rc2))); StringFormat sf; sf.SetAlignment(StringAlignmentCenter); sf.SetLineAlignment(StringAlignmentFar); const wchar_t* p = wcslen(g.settings.promptText) ? g.settings.promptText : L"\u5012\u8ba1\u65f6"; gr.DrawString(p, -1, &fP, RectF(0, 0, (REAL)w, (REAL)(h * 0.35f)), &sf, &br);
-		}
+		// 提示文本（字号优先：超区先加高/加宽窗口保持用户字号，不可行才缩小）
+		const wchar_t* p = wcslen(g.settings.promptText) ? g.settings.promptText : L"\u5012\u8ba1\u65f6";
+		const wchar_t* ffP = (g.settings.promptFontFace[0] != 0) ? g.settings.promptFontFace : g.settings.fontFace;
+		REAL fsP = (REAL)((g.settings.promptFontSize > 0) ? g.settings.promptFontSize : (int)(g.settings.fontSize * 0.28f));
+		FontFamily famP(ffP); FontFamily fallbackP(DEFAULT_FONT); FontFamily* pfP = (famP.GetLastStatus() == Ok) ? &famP : &fallbackP;
+		Font fPm(pfP, fsP, FontStyleRegular, UnitPoint); StringFormat sfP; RectF rcP;
+		gr.MeasureString(p, -1, &fPm, PointF(0, 0), &sfP, &rcP);
 		wchar_t txt[128]; COLORREF cl = g.settings.textColor;
 		if (fin)
 		{
@@ -283,7 +331,99 @@ static void UpdateLayered(HWND hwnd)
 		}
 		Font* pF = Theme_GetFont(); if (pF)
 		{
-			Color gc; gc.SetFromCOLORREF(cl); SolidBrush tb(gc); StringFormat sf; sf.SetAlignment(StringAlignmentCenter); sf.SetLineAlignment(StringAlignmentNear); gr.DrawString(txt, -1, pF, RectF(0, (REAL)(h * 0.33f), (REAL)w, (REAL)(h * 0.67f)), &sf, &tb);
+			Color gc; gc.SetFromCOLORREF(cl); SolidBrush tb(gc); StringFormat sf; sf.SetAlignment(StringAlignmentCenter); sf.SetLineAlignment(StringAlignmentNear);
+			// 字号优先：提示区 0..0.36h，主文本区 0.38h..h；高度/宽度超限先自动加大窗口（上限 90% 屏幕），保持用户字号，加大不可行才缩小
+			FontFamily fam(g.settings.fontFace);
+			FontFamily fallback(DEFAULT_FONT);
+			FontFamily* pf = (fam.GetLastStatus() == Ok) ? &fam : &fallback;
+			REAL fs = (REAL)g.settings.fontSize;
+			const REAL maxW = (REAL)w * 0.97f;
+			const REAL maxHP = (REAL)(h * 0.36f) * 0.95f;
+			const REAL maxH = (REAL)(h * 0.62f) * 0.95f;
+			StringFormat sfM; RectF rcFit;
+			Font fM(pf, fs, FontStyleBold, UnitPoint);
+			gr.MeasureString(txt, -1, &fM, PointF(0, 0), &sfM, &rcFit);
+			// 高度超限：先自动加高窗口（上限 90% 屏幕高），保持用户字号；加高不可行才缩小
+			if ((rcP.Height > maxHP && fsP > 8) || (rcFit.Height > maxH && fs > 20))
+			{
+				int needHP = (rcP.Height > maxHP) ? (int)(rcP.Height / 0.95f / 0.36f) + 16 : 0;
+				int needHM = (rcFit.Height > maxH) ? (int)(rcFit.Height / 0.95f / 0.62f) + 16 : 0;
+				int needH = (needHP > needHM) ? needHP : needHM;
+				int capH = GetSystemMetrics(SM_CYSCREEN) * 9 / 10;
+				if (needH > h && needH <= capH)
+				{
+					RECT wr; GetWindowRect(hwnd, &wr);
+					int scrW = GetSystemMetrics(SM_CXSCREEN), scrH = GetSystemMetrics(SM_CYSCREEN);
+					int newLeft = wr.left, newTop = wr.top;
+					if (g.settings.centerOnScreen)
+					{
+						newLeft = (scrW - (wr.right - wr.left)) / 2;
+						newTop = (scrH - needH) / 2;
+					}
+					else
+					{
+						if (newTop + needH > scrH) newTop = scrH - needH;
+						if (newTop < 0) newTop = 0;
+					}
+					SetWindowPos(hwnd, nullptr, newLeft, newTop, wr.right - wr.left, needH, SWP_NOZORDER | SWP_NOACTIVATE);
+					SelectObject(hdcMem, hOldBmp); DeleteObject(hBmp); DeleteDC(hdcMem); ReleaseDC(nullptr, hdcScreen);
+					return;  // WM_SIZE 重入本函数完成绘制
+				}
+				if (rcP.Height > maxHP && fsP > 8)
+				{
+					fsP = fsP * maxHP / rcP.Height; if (fsP < 8) fsP = 8;
+					Font fP2(pfP, fsP, FontStyleRegular, UnitPoint);
+					gr.MeasureString(p, -1, &fP2, PointF(0, 0), &sfP, &rcP);
+				}
+				if (rcFit.Height > maxH && fs > 20)
+				{
+					fs = fs * maxH / rcFit.Height; if (fs < 20) fs = 20;
+					Font fM2(pf, fs, FontStyleBold, UnitPoint);
+					gr.MeasureString(txt, -1, &fM2, PointF(0, 0), &sfM, &rcFit);
+				}
+			}
+			// 宽度超限：先自动加宽窗口（上限 90% 屏幕宽），保持用户字号；加宽不可行才缩小
+			if (rcP.Width > maxW || rcFit.Width > maxW)
+			{
+				int needWP = (rcP.Width > maxW) ? (int)(rcP.Width / 0.97f) + 8 : 0;
+				int needWM = (rcFit.Width > maxW) ? (int)(rcFit.Width / 0.97f) + 8 : 0;
+				int needW = (needWP > needWM) ? needWP : needWM;
+				int capW = GetSystemMetrics(SM_CXSCREEN) * 9 / 10;
+				if (needW > w && needW <= capW)
+				{
+					RECT wr; GetWindowRect(hwnd, &wr);
+					int scrW = GetSystemMetrics(SM_CXSCREEN);
+					int newLeft = wr.left;
+					if (g.settings.centerOnScreen) newLeft = (scrW - needW) / 2;
+					else
+					{
+						if (newLeft + needW > scrW) newLeft = scrW - needW;
+						if (newLeft < 0) newLeft = 0;
+					}
+					SetWindowPos(hwnd, nullptr, newLeft, wr.top, needW, wr.bottom - wr.top, SWP_NOZORDER | SWP_NOACTIVATE);
+					SelectObject(hdcMem, hOldBmp); DeleteObject(hBmp); DeleteDC(hdcMem); ReleaseDC(nullptr, hdcScreen);
+					return;  // WM_SIZE 重入本函数完成绘制
+				}
+				while (rcP.Width > maxW && fsP > 8)
+				{
+					fsP *= 0.9f;
+					Font fP3(pfP, fsP, FontStyleRegular, UnitPoint);
+					gr.MeasureString(p, -1, &fP3, PointF(0, 0), &sfP, &rcP);
+				}
+				while (rcFit.Width > maxW && fs > 20)
+				{
+					fs *= 0.9f;
+					Font fM3(pf, fs, FontStyleBold, UnitPoint);
+					gr.MeasureString(txt, -1, &fM3, PointF(0, 0), &sfM, &rcFit);
+				}
+			}
+			// 绘制提示
+			{
+				Font fP(pfP, fsP, FontStyleRegular, UnitPoint); COLORREF rc2 = (g.settings.promptTextColor == 0xFFFFFFFF) ? g.settings.textColor : g.settings.promptTextColor; BYTE a = (g.settings.promptTextColor == 0xFFFFFFFF) ? 140 : 255; SolidBrush br(Color(a, GetRValue(rc2), GetGValue(rc2), GetBValue(rc2))); StringFormat sf2; sf2.SetAlignment(StringAlignmentCenter); sf2.SetLineAlignment(StringAlignmentFar);
+				gr.DrawString(p, -1, &fP, RectF(0, 0, (REAL)w, (REAL)(h * 0.36f)), &sf2, &br);
+			}
+			Font fFit(pf, fs, FontStyleBold, UnitPoint);
+			gr.DrawString(txt, -1, &fFit, RectF(0, (REAL)(h * 0.38f), (REAL)w, (REAL)(h * 0.62f)), &sf, &tb);
 		}
 	}
 	else if (g.editMode == 1)
@@ -295,8 +435,8 @@ static void UpdateLayered(HWND hwnd)
 	else if (g.editMode == 2)
 	{
 		SolidBrush bg(Color(180, 10, 10, 16)); gr.FillRectangle(&bg, 0, 0, w, h); Font fb(g.settings.fontFace, (REAL)(g.settings.fontSize * 2 / 3), FontStyleBold, UnitPoint); SolidBrush bd(Color(255, 80, 80, 100)), ba(Color(255, 137, 180, 250)); wchar_t t[128]; swprintf_s(t, L"%04d-%02d-%02d  %02d:%02d:%02d", g.editDateST.wYear, g.editDateST.wMonth, g.editDateST.wDay, g.editDateST.wHour, g.editDateST.wMinute, g.editDateST.wSecond); RectF tr(0, 0, (REAL)w, (REAL)(h - 24)); gr.DrawString(t, -1, &fb, tr, &sfC, &bd);
-		CharacterRange rs[2] = { {0,10},{12,8} }; StringFormat sm; sm.SetAlignment(StringAlignmentCenter); sm.SetLineAlignment(StringAlignmentCenter); sm.SetMeasurableCharacterRanges(2, rs); Region rg[2]; gr.MeasureCharacterRanges(t, -1, &fb, tr, &sm, 2, rg); RectF ar; rg[g.editField].GetBounds(&ar, &gr); gr.SetClip(ar); gr.DrawString(t, -1, &fb, tr, &sfC, &ba); gr.ResetClip(); REAL pd = ar.Width * 0.05f; gr.FillRectangle(&ba, ar.X + pd, ar.GetBottom() - 2.f, ar.Width - pd * 2, 3.f);
-		Font fs(g.settings.fontFace, 10, FontStyleRegular, UnitPoint); SolidBrush dm(Color(255, 140, 140, 160)); gr.DrawString(L"\u2191\u2193 \u8c03\u503c  \u2190\u2192 \u5207\u6362  Enter \u786e\u8ba4  Esc \u53d6\u6d88", -1, &fs, RectF(0, (REAL)(h - 22), (REAL)w, 20), &sfC, &dm);
+		CharacterRange rs[6] = { {0,4},{5,2},{8,2},{12,2},{15,2},{18,2} }; StringFormat sm; sm.SetAlignment(StringAlignmentCenter); sm.SetLineAlignment(StringAlignmentCenter); sm.SetMeasurableCharacterRanges(6, rs); Region rg[6]; gr.MeasureCharacterRanges(t, -1, &fb, tr, &sm, 6, rg); RectF ar; rg[g.editField].GetBounds(&ar, &gr); gr.SetClip(ar); gr.DrawString(t, -1, &fb, tr, &sfC, &ba); gr.ResetClip(); REAL pd = ar.Width * 0.12f; gr.FillRectangle(&ba, ar.X + pd, ar.GetBottom() - 2.f, ar.Width - pd * 2, 3.f);
+		Font fs(g.settings.fontFace, 10, FontStyleRegular, UnitPoint); SolidBrush dm(Color(255, 140, 140, 160)); gr.DrawString(L"\u2190\u2192 \u5b57\u6bb5  \u2191\u2193 \u8c03\u6574  Shift+\u2191\u2193 \u5feb\u8c03  Enter \u786e\u8ba4  Esc \u53d6\u6d88", -1, &fs, RectF(0, (REAL)(h - 22), (REAL)w, 20), &sfC, &dm);
 	}
 	else
 	{
@@ -347,7 +487,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		{
 			switch (wp)
 			{
-			case VK_UP:AdjDate(1); break; case VK_DOWN:AdjDate(-1); break; case VK_LEFT:g.editField = 0; break; case VK_RIGHT:g.editField = 1; break; case VK_RETURN:CommitEdit(); break; case VK_ESCAPE:CancelEdit(); break;
+			case VK_UP:AdjDateField(1); break; case VK_DOWN:AdjDateField(-1); break; case VK_LEFT:g.editField = (g.editField + 5) % 6; break; case VK_RIGHT:g.editField = (g.editField + 1) % 6; break; case VK_RETURN:CommitEdit(); break; case VK_ESCAPE:CancelEdit(); break;
 			}UpdateLayered(hwnd);
 		}
 		else if (g.editMode == 3)
